@@ -1,3 +1,3 @@
 #!/bin/bash
- ls -m -F -p -a
+ls -m -F -p -a
  
