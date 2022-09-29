@@ -21,6 +21,6 @@ listen hbnb
     balance roundrobin
     option httpclose
     option forwardfor
-    server 11916-web-01 35.173.35.145 check
-    server 11916-web-02 44.200.109.147 check
+    server 11916-web-01 3.236.78.105 check
+    server 11916-web-02 44.200.28.165 check
 ~                                            
