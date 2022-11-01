@@ -1,65 +1,74 @@
-# Postmortem
+![This is an image](https://s3.amazonaws.com/intranet-projects-files/holbertonschool-sysadmin_devops/265/uWLzjc8.jpg)
 
-Upon the release of Holberton School's System Engineering & DevOps project 0x19,
-approximately 00:07 Pacific Standard Time (PST), an outage occurred on an isolated
-Ubuntu 14.04 container running an Apache web server. GET requests on the server led to
-`500 Internal Server Error`'s, when the expected response was an HTML file defining a
-simple Holberton WordPress site.
+# Issue summary
 
-## Debugging Process
+Access to the server endpoint using curl 0:80 was returning `curl: (7) Failed to connect to 0 port 80: Connection refused`. The issue lasted for 5 hours after the last server update from a team member up to when it was resolved. The Airbnb clone website was inaccessible to half of the clients during the 5 hours of downtime. This was caused by a wrong port value set in the Nginx configuration files.
 
-Bug debugger Brennan (BDB... as in my actual initials... made that up on the spot, pretty
-good, huh?) encountered the issue upon opening the project and being, well, instructed to
-address it, roughly 19:20 PST. He promptly proceeded to undergo solving the problem.
+# Duration (East Africa Time).
 
-1. Checked running processes using `ps aux`. Two `apache2` processes - `root` and `www-data` -
-were properly running.
+Monday, 27 October 2022
 
-2. Looked in the `sites-available` folder of the `/etc/apache2/` directory. Determined that
-the web server was serving content located in `/var/www/html/`.
+10:00 AM: Logged into the server and the Nginx server was not responding to requests on socket 0:80
 
-3. In one terminal, ran `strace` on the PID of the `root` Apache process. In another, curled
-the server. Expected great things... only to be disappointed. `strace` gave no useful
-information.
+10:05: Begun web debugging to locate issues. This involved the steps;
 
-4. Repeated step 3, except on the PID of the `www-data` process. Kept expectations lower this
-time... but was rewarded! `strace` revelead an `-1 ENOENT (No such file or directory)` error
-occurring upon an attempt to access the file `/var/www/html/wp-includes/class-wp-locale.phpp`.
+Check if Nginx is running
 
-5. Looked through files in the `/var/www/html/` directory one-by-one, using Vim pattern
-matching to try and locate the erroneous `.phpp` file extension. Located it in the
-`wp-settings.php` file. (Line 137, `require_once( ABSPATH . WPINC . '/class-wp-locale.php' );`).
+`sudo service nginx status`
 
-6. Removed the trailing `p` from the line.
+Showed Nginx is not running
 
-7. Tested another `curl` on the server. 200 A-ok!
+Check if there are nginx processes running.
 
-8. Wrote a Puppet manifest to automate fixing of the error.
+`pgrep -lf nginx`
 
-## Summation
+Showed the program is active and running.
 
-In short, a typo. Gotta love'em. In full, the WordPress app was encountering a critical
-error in `wp-settings.php` when tyring to load the file `class-wp-locale.phpp`. The correct
-file name, located in the `wp-content` directory of the application folder, was
-`class-wp-locale.php`.
+Tried to restart Nginx
 
-Patch involved a simple fix on the typo, removing the trailing `p`.
+`sudo service nginx restart`
 
-## Prevention
+failed
 
-This outage was not a web server error, but an application error. To prevent such outages
-moving forward, please keep the following in mind.
 
-* Test! Test test test. Test the application before deploying. This error would have arisen
-and could have been addressed earlier had the app been tested.
+Check log files
 
-* Status monitoring. Enable some uptime-monitoring service such as
-[UptimeRobot](./https://uptimerobot.com/) to alert instantly upon outage of the website.
+`cat /var/log/nginx/error.log | tail -10`
+bind() to [::]:8080 failed (98: Address already in use)
 
-Note that in response to this error, I wrote a Puppet manifest
-[0-strace_is_your_friend.pp](https://github.com/bdbaraban/holberton-system_engineering-devops/blob/master/0x17-web_stack_debugging_3/0-strace_is_your_friend.pp)
-to automate fixing of any such identitical errors should they occur in the future. The manifest
-replaces any `phpp` extensions in the file `/var/www/html/wp-settings.php` with `php`.
+Check processes using ports
 
-But of course, it will never occur again, because we're programmers, and we never make
-errors! :wink:
+`netstat -lpn`
+Nginx was listening on port 8080
+
+Checked Nginx configuration files;
+
+`cat /etc/nginx/sites-available/default`
+
+`cat /etc/nginx/sites-enabled/default`
+
+The problem was with the Nginx configuration in the file `/etc/nginx/sites-enabled/default`.
+
+Nginx was listening on `8080` instead of `80`.
+
+10:31: Nginx was configured to listen on port 80 and restarted successfully.
+
+# Root Cause.
+
+![This is an image](https://s3.amazonaws.com/intranet-projects-files/holbertonschool-sysadmin_devops/294/pQ9YzVY.gif)
+
+Nginx was listening to port 8080 instead of port 80 used to access the web server endpoint. The Nginx server config file `/etc/nginx/sites-enabled/default` was set to listen to port `8080` instead of port `80`. The issue was fixed by changing the default port 8080 to 80 using a shell command:
+
+`sudo sed -i 's/8080 default_server/80 default_server/g' /etc/nginx/sites-enabled/default`
+
+Nginx was restarted by the command:
+
+`sudo service nginx restart`
+
+# Corrective and Preventative measures.
+Nginx server management can be improved by using script automation. A server monitoring tool should be set up to enable quick response to problems.
+
+## What to do
+* Restrict users' access to the server to avoid unconfirmed server changes.
+* Create Nginx automation script in shell or puppet.
+* Install a server monitoring system and a response team to handle server problems
